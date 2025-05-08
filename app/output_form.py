@@ -13,12 +13,12 @@ def get_html(url):
     except Exception as e:
         raise RuntimeError(f"Failed to get html: {e}") from e
     
-def extract_form_section(html):
+def extract_form_sections(html):
     try:
         html_soup = BeautifulSoup(html, "html.parser")
-        form_section = html_soup.find("form")
-        if form_section:
-            return form_section
+        form_sections = html_soup.find_all("form")
+        if form_sections:
+            return form_sections
         else:
             raise RuntimeError("Failed to get form section")
     except Exception as e:
@@ -39,125 +39,155 @@ def extract_label(tag, soup):
 
 def for_input_tag(tag, section, radio_groups, checkbox_groups):
     field_type = tag.get("type", "text")
-    name = tag.get("name")
-    field_id = tag.get("id")
-    label = extract_label(tag, section)
-    placeholder = tag.get("placeholder", "")
-    title = tag.get("title", "")
-    aria_label = tag.get("aria-label", "")
-
-    # near_text: 直前のテキストノード（p, span, divなど）
-    near_text = ""
-    prev = tag.find_previous(string=True)
-    if prev and prev.strip():
-        near_text = prev.strip()
-
     meta = {
-        "name": name,
-        "label": label,
-        "placeholder": placeholder,
-        "id": field_id,
-        "title": title,
-        "aria_label": aria_label,
-        "near_text": near_text
+        "name": tag.get("name"),
+        "label": extract_label(tag, section),
+        "placeholder": tag.get("placeholder", ""),
+        "id": tag.get("id"),
+        "title": tag.get("title", ""),
+        "aria_label": tag.get("aria-label", ""),
+        "near_text": "",
+        "options": None
     }
 
     if field_type == "hidden":
         return None
 
-    if field_type == "radio" and name:
-        radio_groups.setdefault(name, []).append({
-            "value": tag.get("value"),
-            "meta": meta
-        })
+    # groupの場合は別処理
+    if field_type == "radio":
+        radio_groups.setdefault(meta["name"], []).append({"value": tag.get("value"), "meta": meta})
+        return None
+    if field_type == "checkbox":
+        checkbox_groups.setdefault(meta["name"], []).append({"value": tag.get("value"), "meta": meta})
         return None
 
-    if field_type == "checkbox" and name:
-        checkbox_groups.setdefault(name, []).append({
-            "value": tag.get("value"),
-            "meta": meta
-        })
-        return None
-
-    field = {
-        "tag": "input",
-        "type": field_type,
-        "meta": meta
-    }
-
-    if field_type == "file":
-        field["accept"] = tag.get("accept", "")
-
-    return field
+    return meta, field_type
 
 def for_textarea_tag(tag, section):
-    name = tag.get("name")
-    field_id = tag.get("id")
-    label = extract_label(tag, section)
-
-    return {
-        "tag": "textarea",
-        "type": "textarea",
-        "id": field_id,
-        "name": name,
-        "label": label
+    meta = {
+        "name": tag.get("name"),
+        "label": extract_label(tag, section),
+        "placeholder": tag.get("placeholder", ""),
+        "id": tag.get("id"),
+        "title": tag.get("title", ""),
+        "aria_label": tag.get("aria-label", ""),
+        "near_text": "",
+        "options": None
     }
+    return meta, "textarea"
 
 def for_select_tag(tag, section):
-    name = tag.get("name")
-    field_id = tag.get("id")
-    label = extract_label(tag, section)
     options = [opt.get_text(strip=True) for opt in tag.find_all("option") if opt.get_text(strip=True)]
-
-    return {
-        "tag": "select",
-        "type": "select",
-        "id": field_id,
-        "name": name,
-        "label": label,
+    meta = {
+        "name": tag.get("name"),
+        "label": extract_label(tag, section),
+        "placeholder": tag.get("placeholder", ""),
+        "id": tag.get("id"),
+        "title": tag.get("title", ""),
+        "aria_label": tag.get("aria-label", ""),
+        "near_text": "",
         "options": options
     }
+    return meta, "select"
 
-def process_radio_group(radio_groups):
-    return [
-        {
-            "type": "radio_group",
-            "name": name,
-            "options": options
-        }
-        for name, options in radio_groups.items()
-    ]
+def for_button_tag(tag, section):
+    meta = {
+        "name": tag.get("name"),
+        "label": extract_label(tag, section),
+        "placeholder": tag.get("placeholder", ""),
+        "id": tag.get("id"),
+        "title": tag.get("title", ""),
+        "aria_label": tag.get("aria-label", ""),
+        "near_text": (tag.text.strip() if tag.text.strip() else "")
+    }
+    return meta, "button"
 
-def process_checkbox_group(checkbox_groups):
-    return [
-        {
-            "type": "checkbox_group",
-            "name": name,
-            "options": options
-        }
-        for name, options in checkbox_groups.items()
-    ]
 
 def extract_fields(section):
     fields = []
     radio_groups = {}
     checkbox_groups = {}
 
-    for tag in section.find_all(["input", "textarea", "select"]):
+    for tag in section.find_all(["input", "textarea", "select", "button"]):
         if tag.name == "input":
             result = for_input_tag(tag, section, radio_groups, checkbox_groups)
             if result:
-                fields.append(result)
+                meta, type_ = result
+                fields.append({
+                    "tag": "input",
+                    "type": type_,
+                    "meta": meta
+                })
         elif tag.name == "textarea":
-            fields.append(for_textarea_tag(tag, section))
+            meta, type_ = for_textarea_tag(tag, section)
+            fields.append({
+                "tag": "textarea",
+                "type": type_,
+                "meta": meta
+            })
         elif tag.name == "select":
-            fields.append(for_select_tag(tag, section))
+            meta, type_ = for_select_tag(tag, section)
+            fields.append({
+                "tag": "select",
+                "type": type_,
+                "meta": meta
+            })
+        elif tag.name == "button":
+            meta, type_ = for_button_tag(tag, section)
+            fields.append({
+                "tag": "button",
+                "type": type_,
+                "meta": meta
+            })
 
-    # グループ処理後に追加
-    fields.extend(process_radio_group(radio_groups))
-    fields.extend(process_checkbox_group(checkbox_groups))
+    # グループ処理も統一形式で
+    for name, options_list in radio_groups.items():
+        meta = {
+            "name": name,
+            "label": "",
+            "placeholder": "",
+            "id": None,
+            "title": "",
+            "aria_label": "",
+            "near_text": "",
+            "options": [opt["value"] for opt in options_list]
+        }
+        fields.append({
+            "tag": "radio_group",
+            "type": "radio_group",
+            "meta": meta
+        })
+
+    for name, options_list in checkbox_groups.items():
+        meta = {
+            "name": name,
+            "label": "",
+            "placeholder": "",
+            "id": None,
+            "title": "",
+            "aria_label": "",
+            "near_text": "",
+            "options": [opt["value"] for opt in options_list]
+        }
+        fields.append({
+            "tag": "checkbox_group",
+            "type": "checkbox_group",
+            "meta": meta
+        })
 
     return fields
+
+def detect_form(form_sections, min_fields=3):
+    valid_forms = []
+    for form in form_sections:
+        inputs = form.find_all(["input", "textarea", "select", "button"])
+        if len(inputs) >= min_fields:
+            valid_forms.append(form)
+    
+    if valid_forms:
+        return valid_forms[0]
+    else:
+        return False
 
 def output_form(url):
     try:
@@ -170,13 +200,22 @@ def output_form(url):
         raise RuntimeError(f" >Failed to get html: {e}") from e
     
     try:
-        section = extract_form_section(html)
-        if section:
+        all_sections = extract_form_sections(html)
+        if all_sections:
             logger.info(f" >Successfully got form section")
         else:
             raise RuntimeError(" >Failed to get form section")
     except Exception as e:
         raise RuntimeError(f" >Failed to get form section: {e}") from e
+
+    try:
+        section = detect_form(all_sections, min_fields=3)
+        if section:
+            logger.info(f" >This is a valid form")
+        else:
+            raise RuntimeError(" >This is not a valid form")
+    except Exception as e:
+        raise RuntimeError(f" >Failed to detect form: {e}") from e
     
     try:
         fields = extract_fields(section)
@@ -186,6 +225,8 @@ def output_form(url):
             raise RuntimeError(" >Failed to get fields")
     except Exception as e:
         raise RuntimeError(f" >Failed to get fields: {e}") from e
+    
+    print(fields)
     
     if browser:
         return fields, browser

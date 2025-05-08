@@ -38,6 +38,8 @@ else:
     with open(client_sender_path) as f:
         sender_info = f.read()
 
+screenshot_path = f"{client_path}/screenshots"
+
 logger.info("0400: Parsing system number")
 start_row = int(args.start_row)
 end_row = int(args.end_row)
@@ -45,7 +47,7 @@ end_row = int(args.end_row)
 logger.info("0500: Running system")
 try:
     from app.logic import run_flow
-    run_flow(start_row, end_row, spreadsheet, sender_info)
+    run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path)
     logger.info(f"0600: 🟢 success for @{args.client}")
 except Exception as e:
     logger.critical(f"🔴 error occurred while running system: {e}")
@@ -55,8 +57,7 @@ except Exception as e:
 logger.info("0700: 🍺🍺 main execution completed 🍺🍺")
 
 """
-python main.py --client client_test --start_row 2 --end_row 4
-python main.py --client client_test --start_row 3 --end_row 4
+python main.py --client client_test --start_row 7 --end_row 13
 """
 
 

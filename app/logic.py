@@ -3,10 +3,11 @@ from utilities.google_spreadsheet import *
 from utilities.save_file import *
 from utilities.logger import logger
 from app.output_form import output_form
-from app.ask_gpt import ask_gpt
+from app.ask_form import ask_form
 from app.input_form import input_form
+from app.check import check_screenshot
 
-def run_flow(start_row, end_row, spreadsheet, sender_info):
+def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path):
     sheet_id = spreadsheet["sheet_id"]
     sheet = spreadsheet["sheet"]
     column_map = spreadsheet["column_map"]
@@ -39,6 +40,7 @@ def run_flow(start_row, end_row, spreadsheet, sender_info):
         url = data["basic_url"]
         sentence = data["basic_sentence"]
         status = data["system_status"]
+        num = data["system_num"]
 
         if not name:
             logger.warning(f"🟡 #{row} does not have a name. Going to next row.")
@@ -63,11 +65,9 @@ def run_flow(start_row, end_row, spreadsheet, sender_info):
                 raise RuntimeError(f'🔴 Failed to get form structure from {url[:10]}..') from e
         except Exception as e:
             raise RuntimeError(f'🔴 Failed to get form structure from {url[:10]}..: {e}') from e
-        
-        print(f'\n{form_structure}\n')
 
         try:
-            actions = ask_gpt(form_structure, sender_info, sentence)
+            actions = ask_form(form_structure, sender_info, sentence)
             if actions:
                 logger.info(f'🟢 Successfully got actions from {url[:10]}..')
             else:
@@ -75,51 +75,50 @@ def run_flow(start_row, end_row, spreadsheet, sender_info):
         except Exception as e:
             raise RuntimeError(f'🔴 Failed to get actions from {url[:10]}..: {e}') from e
         
+        send=False
+        
         try:
-            input_status, error = input_form(actions, browser, send=True)
-            if input_status == True:
+            input_error, send_status = input_form(form_structure, actions, browser, send, sleep_time=2)
+            if send_status == True:
                 logger.info(f'🟢 Successfully inputted form from {url[:10]}..')
             else:
-                raise RuntimeError(f'🔴 Failed to input form from {url[:10]}..') from e
+                raise RuntimeError(f'🔴 Failed to input form from {url[:10]}..')
         except Exception as e:
             raise RuntimeError(f'🔴 Failed to input form from {url[:10]}..: {e}') from e
         
-        browser.quit()
+        time.sleep(5)
         
-        # try:
-        #     email_status = check_email(url)
-        #     if email_status == True:
-        #         logger.info(f'🟢 Successfully checked email from {url[:10]}..')
-        #     else:
-        #         email_status = False
-        #         logger.error(f'Failed to check email from {url[:10]}..')
-        # except Exception as e:
-        #     raise RuntimeError(f'Failed to check email from {url[:10]}..: {e}') from e
+        if send == True:
+            try:
+                if send_status == True:
+                    screenshot_status = check_screenshot(browser, screenshot_path, num)
+                    if screenshot_status == True:
+                        logger.info(f'🟢 Successfully checked screenshot from {url[:10]}.. (yes)')
+                    elif screenshot_status == False:
+                        logger.info(f'🟢 Successfully checked screenshot from {url[:10]}.. (no)')
+                else:
+                    raise RuntimeError(f'🔴 Failed to check screenshot from {url[:10]}..') from e
+            except Exception as e:
+                raise RuntimeError(f'🔴 Failed to check screenshot from {url[:10]}..: {e}') from e
+        else:
+            screenshot_status = True
+            logger.info(f'🟡 Does not require screenshot for {url[:10]}..')
 
         email_status = True
 
         try:
-            overall_status = whats_the_status(input_status, email_status)
+            overall_status = whats_the_status(send_status, screenshot_status, email_status)
             if overall_status:
                 logger.info(f'🟢 Successfully got overall status')
             else:
                 raise RuntimeError(f'🔴 Failed to get overall status')
         except Exception as e:
             raise RuntimeError(f'🔴 Failed to get overall status: {e}') from e
-        
-        try:
-            output_error = convert_error_to_string(error)
-            if output_error:
-                logger.info(f'🟢 Successfully converted error to string')
-            else:
-                raise RuntimeError(f'🔴 Failed to convert error to string')
-        except Exception as e:
-            raise RuntimeError(f'🔴 Failed to convert error to string: {e}') from e
 
         try:
             output_status_1 = {}
             output_status_1["system_status"] = overall_status
-            output_status_1["system_error"] = output_error
+            output_status_1["system_error"] = "\n".join(input_error) if input_error else ""
             output_status = output_google_spreadsheet(sheet, column_map, row, output_status_1)
             if output_status == True:
                 logger.info(f'🟢 Successfully outputted status for sheet {name}')
@@ -131,19 +130,12 @@ def run_flow(start_row, end_row, spreadsheet, sender_info):
         logger.info(f"==ending for #{row}===")
         row += 1
 
-def whats_the_status(input_status, email_status):
-    if input_status == True and email_status == True:
+def whats_the_status(input_status, screenshot_status, email_status):
+    if input_status == True and screenshot_status == True:
         return 'completed'
-    elif input_status == True and email_status == False:
-        return 'email_error'
-    elif input_status == False and email_status == True:
-        return 'input_error'
-    elif input_status == False and email_status == False:
+    elif input_status == True and screenshot_status == False:
+        return 'screenshot_failed'
+    elif input_status == False and screenshot_status == True:
+        return 'input_failed'
+    elif input_status == False and screenshot_status == False:
         return 'error'
-
-def convert_error_to_string(error):
-    parts = []
-    for key, errors in error.items():
-        joined_errors = ", ".join(errors) if errors else ""
-        parts.append(f"{key}: {joined_errors}")
-    return "\n".join(parts)

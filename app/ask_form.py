@@ -22,32 +22,38 @@ def create_prompt(form_structure, sender_info, sentence):
     form_json = json.dumps(form_structure, ensure_ascii=False, indent=2)
     sender_json = json.dumps(sender_info, ensure_ascii=False, indent=2)
 
-    main_prompt = f"""
+    main_prompt = """
 あなたはウェブフォーム自動入力支援AIです。
-以下にフォームの構造情報（JSON形式）とユーザー情報（TXT形式）を提供します。
 
-フォーム構造情報では、各入力フィールドの「meta」属性として name, label, placeholder, id, near_textなどの情報が含まれています。
-このmeta情報から、そのフィールドがどのユーザー情報に対応するかを推測してください。
+以下にフォーム構造情報（fields）とユーザー情報を提供します。
 
-出力では、各フィールドに入力するべき値をJSON形式で返してください。
+フォーム構造情報は、各入力項目の「tag」「type」「meta情報」を順番にリストで提供しています。
 
-【出力仕様】
-- 通常の入力欄（text, email など）は "フィールド名": "入力する値" としてください。
-- radioボタンは "フィールド名": "選択するvalue" としてください。
-- checkboxは:
-    - 複数選択の場合: "フィールド名": ["選択するvalue1", "選択するvalue2"]
-    - 1個のみの場合: "フィールド名": true または false
-    - 該当する入力値が無い場合は ""（空文字）、または checkbox は false にしてください。
+あなたの役割は、この順番に沿って、各項目に入力する値（value）だけをリストで返すことです。
+
+出力仕様:
+- 出力はJSON形式で "actions" キーを持つオブジェクトとしてください。
+- "actions" の値は、フォーム構造情報の順番に対応する値のリストです。
+- 各typeに合った形式で返してください。
+    - type="text": 文字列
+    - type="email": メールアドレス形式
+    - type="date": yyyy-mm-dd形式
+    - type="tel": 電話番号形式
+    - type="radio": 選択するoptionのvalue
+    - type="checkbox": 選択するoptionのvalue
+- 下記に【問い合わせ内容およびメッセージ】は、基本的にtagが<textarea>のものに含めてください。
+- 値が入力不要な場合もしくは不明な場合、""（空文字）を入れてください。
 
 出力形式の例:
-{{
-  "first_name": "Taro",
-  "gender": "male",
-  "hobbies": ["reading", "sports"],
-  "newsletter": true
-}}
+{
+  "actions": [
+    "2024-04-05",
+    "山田太郎",
+    "example@example.com"
+  ]
+}
 
-必ず上記のJSON形式でのみ出力してください。
+※必ず上記のJSON形式でのみ出力してください。
 """
 
     overall_prompt = f"""
@@ -65,17 +71,7 @@ def create_prompt(form_structure, sender_info, sentence):
 
     return overall_prompt
 
-def convert_to_actions(response):
-    actions = []
-    for key, value in response.items():
-        actions.append({
-            "type": "fill",
-            "name": key,
-            "value": value
-        })
-    return {"actions": actions}
-
-def ask_gpt(form_structure, sender_info, sentence):
+def ask_form(form_structure, sender_info, sentence):
     try:
         prompt = create_prompt(form_structure, sender_info, sentence)
         if prompt:
@@ -99,13 +95,4 @@ def ask_gpt(form_structure, sender_info, sentence):
     except Exception as e:
         raise RuntimeError(f'Failed to convert response to json: {e}') from e
     
-    try:
-        actions = convert_to_actions(response_json)
-        if actions:
-            logger.info(f' >actions:\n{actions}')
-        else:
-            raise RuntimeError(f'Failed to convert response to actions')
-    except Exception as e:
-        raise RuntimeError(f'Failed to convert response to actions: {e}') from e
-    
-    return actions
+    return response_json
