@@ -63,7 +63,7 @@ python main.py --client client_test --start_row 9 --end_row 13
 
 python main.py --client client_samurai --start_row 3 --end_row 100
 
-python main.py --client client_samurai --start_row 106 --end_row 200
+python main.py --client client_samurai --start_row 163 --end_row 164
 """
 
 

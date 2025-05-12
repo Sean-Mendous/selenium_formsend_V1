@@ -102,9 +102,6 @@ def create_prompt(fixed_html):
 
 【抽出ルール】
 input, textarea, select, button を対象とします。
-・input type="radio" または input type="checkbox" の場合、同じ name 属性を持つものは同一グループと見なし、1つのオブジェクトとして抽出してください。
-・このとき meta.options に、各選択肢のラベル（または付近のテキスト）をリストで格納してください。
-・グループ全体に対応する説明や見出し（例：「性別を選択」「利用規約に同意してください」など）がある場合、それを meta.near_text に入れてください。
 
 control の設定基準：
 ・入力や選択を伴う要素は "fill"
@@ -128,7 +125,7 @@ control の設定基準：
       "title": "<title属性値 or 空文字>",
       "aria_label": "<aria-label属性値 or 空文字>",
       "near_text": "<inputやtextareaなどに直近で関連付けられそうなテキストノード>",
-      "options": "<select, radio, checkbox の場合は選択肢のラベルリスト。その他は null>"
+      "options": "<select の場合は選択肢のラベルリスト。その他は null>"
     }
   },
   ...
@@ -139,10 +136,11 @@ control の設定基準：
 ・label は <label for="id"> または <label> に囲まれたテキストから取得してください。
 ・near_text は <p>, <span>, <div> など直前・直上にあるテキストノードから取得してください。
 
-options は以下の場合に指定：
-・<select> の <option> テキストリスト
-・radio / checkbox グループの選択肢ラベル
-・その他（input, textarea, button）は null
+【注意事項】
+<form> タグの外に存在する要素も抽出対象としてください。特に以下のような重要要素は、<form> の外に配置されることが多くあります：
+・「送信」「確認」などの button 要素
+・「個人情報の取り扱いに関する同意」「利用規約への同意」などの checkbox 要素や補足テキスト
+これらも他のフォーム要素と同様に抽出し、適切に control, type, meta を設定してください。
 
 以下のHTMLを解析してください。
     """

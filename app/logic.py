@@ -1,4 +1,5 @@
 import time
+import json
 from utilities.google_spreadsheet import *
 from utilities.save_file import *
 from utilities.logger import logger
@@ -41,16 +42,17 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
                 raise RuntimeError(f'🔴 #{row}: got failed multi times')
             try:
                 output_status = {}
-                output_status["system_status"] = 'error'
+                output_status["system_status"] = error_log
                 output_status = output_google_spreadsheet(sheet, column_map, row, output_status)
                 if output_status == True:
                     logger.info(f'🟢 Successfully outputted status')
                 else:
-                    raise RuntimeError(f'Failed to output status')
+                    raise RuntimeError(f'🔴 Failed to output status')
             except Exception as e:
-                raise RuntimeError(f'Failed to output status: {e}') from e
+                raise RuntimeError(f'🔴 Failed to output status: {e}') from e
             row += 1
 
+        error_log = None
         logger.info(f"==starting for #{row}===")
         logger.info(f"（error_count: {error_count}）")
 
@@ -84,15 +86,18 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
             else:
                 logger.error(f'🔴 Failed to get fixed html from {url[:10]}..')
                 error_count += 1
+                error_log = 'Could not get fixed html / Selenium error'
                 continue
         except Exception as e:
             logger.error(f'🔴 Failed to get fixed html from {url[:10]}..: {e}')
             error_count += 1
+            error_log = 'Could not get fixed html / Selenium error'
             continue
         
         if len(fixed_html) > 25000:
             logger.error(f'🔴 HTML is too long')
             error_count += 1
+            error_log = 'HTML is too long'
             continue
 
         logger.info(f"🔄 2. Getting fields from {url[:10]}..")
@@ -104,51 +109,62 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
             else:
                 logger.error(f'🔴 Failed to get fields from {url[:10]}..')
                 error_count += 1
+                error_log = 'Could not get fields / Not a form page / GPT response error'
                 continue
         except Exception as e:
             logger.error(f'🔴 Failed to get fields from {url[:10]}..: {e}')
             error_count += 1
+            error_log = 'Could not get fields / Not a form page / GPT response error'
             continue
         
         if len(fields) < 3:
             logger.error(f'🔴 Fields are too short')
             error_count += 1
+            error_log = 'Fields are too short / Not a form page'
             continue
         
-        print(fields)
-        # input(len(fields))
+        logger.info(f"--------------------------------")
+        logger.info(json.dumps(fields, indent=2, ensure_ascii=False))
+        logger.info(len(fields))
+        logger.info(f"--------------------------------")
 
         logger.info(f"🔄 3. Getting actions from {url[:10]}..")
         
         try:
-            actions = input_action_json(fields, sender_info, sentence)
-            if actions:
+            fields_actions = input_action_json(fields, sender_info, sentence)
+            if fields_actions:
                 logger.info(f'🟢 Successfully got actions from {url[:10]}..')
             else:
                 logger.error(f'🔴 Failed to get actions from {url[:10]}..')
                 error_count += 1
+                error_log = 'Could not get actions / GPT response error'
                 continue
         except Exception as e:
             logger.error(f'🔴 Failed to get actions from {url[:10]}..: {e}')
             error_count += 1
+            error_log = 'Could not get actions / GPT response error'
             continue
         
-        print(actions)
-        # input(len(actions))
+        logger.info(f"--------------------------------")
+        logger.info(json.dumps(fields_actions, indent=2, ensure_ascii=False))
+        logger.info(len(fields_actions))
+        logger.info(f"--------------------------------")
 
         logger.info(f"🔄 4. Inputting form from {url[:10]}..")
         
         try:
-            input_error, send_status = input_form(fields, actions, browser, send, sleep_time=2)
+            input_error, send_status = input_form(fields_actions, browser, send, sleep_time=2)
             if send_status == True:
                 logger.info(f'🟢 Successfully inputted form from {url[:10]}..')
             else:
                 logger.error(f'🔴 Failed to input form from {url[:10]}..')
                 error_count += 1
+                error_log = 'Could not input form / Selenium error'
                 continue
         except Exception as e:
             logger.error(f'🔴 Failed to input form from {url[:10]}..: {e}')
             error_count += 1
+            error_log = 'Could not input form / Selenium error'
             continue
         
         logger.info(f"🔄 5. Checking screenshot from {url[:10]}..")
@@ -165,10 +181,12 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
                 else:
                     logger.error(f'🔴 Failed to check screenshot from {url[:10]}..')
                     error_count += 1
+                    error_log = 'Could not check screenshot / Selenium error'
                     continue
             except Exception as e:
                 logger.error(f'🔴 Failed to check screenshot from {url[:10]}..: {e}')
                 error_count += 1
+                error_log = 'Could not check screenshot / Selenium error'
                 continue
         else:
             screenshot_status = True
@@ -182,10 +200,14 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
             if overall_status:
                 logger.info(f'🟢 Successfully got overall status')
             else:
-                raise RuntimeError(f'🔴 Failed to get overall status')
+                logger.error(f'🔴 Failed to get overall status')
+                error_count += 1
+                error_log = 'Could not get overall status'
+                continue
         except Exception as e:
             logger.error(f'🔴 Failed to get overall status: {e}')
             error_count += 1
+            error_log = 'Could not get overall status'
             continue
 
         try:
@@ -198,10 +220,12 @@ def run_flow(start_row, end_row, spreadsheet, sender_info, screenshot_path, send
             else:
                 logger.error(f'🔴 Failed to output status for sheet {name}')
                 error_count += 1
+                error_log = 'Could not output status'
                 continue
         except Exception as e:
             logger.error(f'🔴 Failed to output status for sheet {name}: {e}')
             error_count += 1
+            error_log = 'Could not output status'
             continue
 
         logger.info(f"==ending for #{row}===")
@@ -216,4 +240,4 @@ def whats_the_status(input_status, screenshot_status, email_status):
     elif input_status == False and screenshot_status == True:
         return 'input_failed'
     elif input_status == False and screenshot_status == False:
-        return 'error'
+        return 'other error'
