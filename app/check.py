@@ -2,6 +2,7 @@ import os
 from openai import OpenAI
 from dotenv import load_dotenv
 import base64
+from app.chatgpt_setting import chatgpt_4o_image_model
 from utilities.logger import logger
 
 def save_screenshot(browser, output_path, id):
@@ -17,27 +18,7 @@ def encode_image(image_path):
         base64_encoded = base64.b64encode(img_file.read()).decode('utf-8')
     return base64_encoded
 
-def chatgpt_4o_image_model(encoded_image, prompt):
-    load_dotenv()
-    api_key = os.getenv('OPENAI_API_KEY')
-    client = OpenAI(api_key=api_key)
-
-    response = client.chat.completions.create(
-    model="gpt-4o",
-        messages=[
-            {"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
-            ]}
-        ],
-        temperature=0
-    )
-
-    result = response.choices[0].message.content.strip().lower()
-    return result
-
 def check_screenshot(browser, screenshot_path, id):
-
     prompt = """
 あなたはウェブフォーム送信の確認担当です。
 以下のスクリーンショット画像が「フォーム送信が正常に完了したことを示す画面」であるかを判定してください。
